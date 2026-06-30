@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title> 🚆 Marie & Jimmy's Transit Times 🚌 </title>
+    <style>
+        :root {
+            --bg-color: #121214;
+            --card-bg: #1e1e24;
+            --accent-bart: #0072ce;
+            --accent-ac: #008542;
+            --accent-eastbound: #d97706;
+            --text-main: #ffffff;
+            --text-muted: #a0a0ab;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        header {
+            width: 100%;
+            max-width: 1200px;
+            margin-bottom: 24px;
+            text-align: center;
+        }
+
+        h1 { margin: 0 0 8px 0; font-size: 1.8rem; }
+        .subtitle { color: var(--text-muted); margin: 0; font-size: 0.95rem; }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 20px;
+            width: 100%;
+            max-width: 1200px;
+        }
+
+        @media (min-width: 768px) {
+            .dashboard-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (min-width: 1024px) {
+            .dashboard-grid { grid-template-columns: repeat(3, 1fr); }
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            border-top: 4px solid var(--text-muted);
+        }
+
+        .card.bart-card { border-top-color: var(--accent-bart); }
+        .card.ac-card { border-top-color: var(--accent-ac); }
+        .card.eastbound-card { border-top-color: var(--accent-eastbound); }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            border-bottom: 1px solid #2d2d35;
+            padding-bottom: 10px;
+        }
+
+        .card-title { font-size: 1.2rem; font-weight: bold; margin: 0; }
+        .badge {
+            font-size: 0.75rem;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        .bart-badge { background-color: var(--accent-bart); color: white; }
+        .ac-badge { background-color: var(--accent-ac); color: white; }
+        .eastbound-badge { background-color: var(--accent-eastbound); color: white; }
+
+        .departure-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .departure-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            background: rgba(255,255,255,0.04);
+            border-radius: 6px;
+        }
+
+        .route-info { display: flex; align-items: center; gap: 12px; }
+        .route-number {
+            font-weight: bold;
+            background: #2d2d35;
+            padding: 4px 8px;
+            border-radius: 4px;
+            min-width: 35px;
+            text-align: center;
+        }
+        .route-destination { font-size: 0.95rem; }
+        .time-remaining { font-weight: bold; color: #4cd964; font-size: 1.1rem; }
+        .time-remaining.loading { color: var(--text-muted); }
+
+        .footer {
+            margin-top: 30px;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Berkeley Transit Dashboard</h1>
+        <p class="subtitle">Live Local Transit Tracker • Updates every 30s</p>
+    </header>
+
+    <div class="dashboard-grid">
+        <div class="card ac-card">
+            <div class="card-header">
+                <h2 class="card-title">San Pablo & Cedar</h2>
+                <span class="badge ac-badge">SB Bus (#59600)</span>
+            </div>
+            <div class="departure-list" id="ac-sb-departures">
+                <div class="departure-item"><span class="time-remaining loading">Loading bus schedules...</span></div>
+            </div>
+        </div>
+
+        <div class="card eastbound-card">
+            <div class="card-header">
+                <h2 class="card-title">Cedar & Cornell</h2>
+                <span class="badge eastbound-badge">EB Bus (#50234)</span>
+            </div>
+            <div class="departure-list" id="ac-eb-departures">
+                <div class="departure-item"><span class="time-remaining loading">Loading bus schedules...</span></div>
+            </div>
+        </div>
+
+        <div class="card bart-card">
+            <div class="card-header">
+                <h2 class="card-title">North Berkeley</h2>
+                <span class="badge bart-badge">SB BART (NBRK)</span>
+            </div>
+            <div class="departure-list" id="bart-departures">
+                <div class="departure-item"><span class="time-remaining loading">Loading train schedules...</span></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer" id="last-updated">Last updated: Never</div>
+
+    <script>
+        const BART_STATION = 'NBRK';
+        const BART_API_KEY = 'MW9S-E7SL-26DU-VV8V'; 
+        const SOUTHBOUND_BART_DESTINATIONS = ['Berryessa', 'Dublin/Pleasanton', 'Millbrae', 'San Francisco', 'Daly City'];
+
+        const SF511_TOKEN = '08da8948-6059-440f-9c32-ef44df184c36';
+        const AC_STOP_SB = '59600';
+        const AC_STOP_EB = '50234';
+
+        async function fetchBART() {
+            const url = `https://api.bart.gov/api/etd.aspx?cmd=etd&orig=${BART_STATION}&key=${BART_API_KEY}&json=y`;
+            const container = document.getElementById('bart-departures');
+            
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                const etdList = data.root.station[0].etd || [];
+                
+                let html = '';
+                let hasSouthbound = false;
+
+                etdList.forEach(route => {
+                    if (SOUTHBOUND_BART_DESTINATIONS.some(dest => route.destination.includes(dest))) {
+                        hasSouthbound = true;
+                        route.estimate.forEach(est => {
+                            const minutes = est.minutes === 'Leaving' ? 'Leaving' : `${est.minutes} min`;
+                            const color = est.hexcolor || '#ffffff';
+                            html += `
+                                <div class="departure-item">
+                                    <div class="route-info">
+                                        <span class="route-number" style="border-left: 4px solid ${color}">BART</span>
+                                        <span class="route-destination">${route.destination}</span>
+                                    </div>
+                                    <span class="time-remaining">${minutes}</span>
+                                </div>
+                            `;
+                        });
+                    }
+                });
+
+                container.innerHTML = hasSouthbound ? html : '<div class="departure-item">No upcoming southbound trains</div>';
+            } catch (error) {
+                console.error('Error fetching BART data:', error);
+                container.innerHTML = '<div class="departure-item">Error loading BART data</div>';
+            }
+        }
+
+        async function fetchACStop(stopCode, containerId) {
+            const container = document.getElementById(containerId);
+            const url = `https://api.511.org/transit/StopMonitoring?api_key=${SF511_TOKEN}&agency=AC&stopcode=${stopCode}&format=json`;
+            
+            try {
+                const response = await fetch(url);
+                const rawText = await response.text();
+                
+                // 511 API often includes a UTF-8 BOM character that breaks normal JSON parsing.
+                // This strips out any non-JSON characters at the start of the string.
+                const cleanText = rawText.trim().replace(/^\uFEFF/, '');
+                const data = JSON.parse(cleanText);
+                
+                const visits = data.ServiceDelivery?.StopMonitoringDelivery?.MonitoredStopVisit || [];
+                
+                if (visits.length === 0) {
+                    container.innerHTML = '<div class="departure-item">No upcoming buses scheduled</div>';
+                    return;
+                }
+
+                let html = '';
+                visits.slice(0, 4).forEach(visit => {
+                    const journey = visit.MonitoredVehicleJourney;
+                    const route = journey.LineRef;
+                    const destination = journey.DestinationName;
+                    
+                    // Calculate arrival countdown in minutes
+                    const expectedArrival = new Date(journey.MonitoredCall.ExpectedArrivalTime);
+                    const now = new Date();
+                    const diffMs = expectedArrival - now;
+                    const diffMins = Math.round(diffMs / 1000 / 60);
+                    
+                    const displayTime = diffMins <= 0 ? 'Leaving' : `${diffMins} min`;
+
+                    html += `
+                        <div class="departure-item">
+                            <div class="route-info">
+                                <span class="route-number">${route}</span>
+                                <span class="route-destination">${destination}</span>
+                            </div>
+                            <span class="time-remaining">${displayTime}</span>
+                        </div>
+                    `;
+                });
+
+                container.innerHTML = html;
+            } catch (error) {
+                console.error(`Error fetching AC Transit stop ${stopCode}:`, error);
+                container.innerHTML = '<div class="departure-item">Error loading bus data</div>';
+            }
+        }
+
+        function updateDashboard() {
+            fetchBART();
+            fetchACStop(AC_STOP_SB, 'ac-sb-departures');
+            fetchACStop(AC_STOP_EB, 'ac-eb-departures');
+            document.getElementById('last-updated').innerText = `Last updated: ${new Date().toLocaleTimeString()}`;
+        }
+
+        updateDashboard();
+        setInterval(updateDashboard, 30000); // Live updates every 30 seconds
+    </script>
+</body>
+</html>
